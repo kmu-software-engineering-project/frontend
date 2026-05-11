@@ -1,3 +1,41 @@
-# #software engineering project team7
+### 옵션 1: 최상단 알림형 (가장 눈에 잘 띔)
 
-Please check the another branch to see development process.
+README 파일 맨 위에 배치해서 바로 읽게 만드는 방식입니다.
+
+> **📢 알림:** 현재 추천 시스템 관련 최신 코드는 **`feature/recommendation`** 브랜치에 업로드되어 있습니다. 해당 브랜치로 전환하여 확인해 주세요!
+
+---
+
+### 옵션 2: 진행 상황 표 (깔끔하고 전문적임)
+
+여러 작업이 동시에 진행 중일 때 유용합니다.
+
+| 기능 | 브랜치 이름 | 상태 |
+| --- | --- | --- |
+| 메인 시스템 | `main` | 배포 가능 |
+| **추천 알고리즘** | **`feature/recommendation`** | **개발 중 / 리뷰 필요** |
+
+---
+
+### 옵션 3: 명령어 포함 (팀원을 배려하는 방식)
+
+팀원이 바로 명령어를 복사해서 쓸 수 있게 도와줍니다.
+
+### 🛠 현재 개발 중인 기능
+
+추천 기능 업데이트는 별도의 브랜치에서 진행 중입니다. 아래 명령어를 통해 확인하실 수 있습니다:
+
+```bash
+git fetch origin
+git checkout feature/recommendation
+
+```
+
+---
+
+### 💡 팁: 혹시 확인해 보셨나요?
+
+메시지를 남기기 전에 아래 두 가지만 살짝 확인해 보세요:
+
+1. **Remote Push 확인:** 내 컴퓨터에서만 브랜치를 만든 게 아니라, GitHub 서버로 올리셨나요? (`git push origin feature/recommendation`)
+2. **Pull Request (PR) 생성:** GitHub에서 **Draft Pull Request**를 생성해 두면, README를 수정하지 않아도 팀원이 메인 페이지에서 "업데이트된 브랜치가 있다"는 알림을 바로 볼 수 있어 편리합니다.
