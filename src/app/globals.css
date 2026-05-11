@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #1a1a2e;
+  --background: #fafafa;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+@layer components {
+  .section-title {
+    @apply text-2xl font-bold text-gray-800 mb-6;
+  }
+}
