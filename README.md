@@ -32,10 +32,3 @@ git checkout feature/recommendation
 ```
 
 ---
-
-### 💡 팁: 혹시 확인해 보셨나요?
-
-메시지를 남기기 전에 아래 두 가지만 살짝 확인해 보세요:
-
-1. **Remote Push 확인:** 내 컴퓨터에서만 브랜치를 만든 게 아니라, GitHub 서버로 올리셨나요? (`git push origin feature/recommendation`)
-2. **Pull Request (PR) 생성:** GitHub에서 **Draft Pull Request**를 생성해 두면, README를 수정하지 않아도 팀원이 메인 페이지에서 "업데이트된 브랜치가 있다"는 알림을 바로 볼 수 있어 편리합니다.
