@@ -1,44 +1,564 @@
-import Link from 'next/link'
-import { MOCK_REVIEWS } from '@/lib/mock'
+'use client'
+
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+type Book = {
+  id: string
+  title: string
+  contents: string
+  url: string
+  isbn: string
+  isbn13: string
+  publishedAt: string
+  authors: string[]
+  publisher: string
+  price: number
+  salePrice: number
+  thumbnail: string
+  status: string
+  genre: Genre
+  aladinCategoryName: string
+}
+
+type Genre =
+  | '전체'
+  | '소설'
+  | '시/에세이'
+  | '자기계발'
+  | '경제/경영'
+  | '인문'
+  | '사회/정치'
+  | '과학'
+  | '예술'
+  | '어린이'
+  | '기타'
+
+type Review = {
+  id: string
+  bookId: string
+  nickname: string
+  password: string
+  rating: number
+  comment: string
+  createdAt: string
+}
+
+type SearchResponse = {
+  books: Book[]
+  nextPage: number
+  isEnd: boolean
+  error?: string
+}
+
+type SortMode = 'latest' | 'rating'
+
+const GENRES: Genre[] = [
+  '전체',
+  '소설',
+  '시/에세이',
+  '자기계발',
+  '경제/경영',
+  '인문',
+  '사회/정치',
+  '과학',
+  '예술',
+  '어린이',
+  '기타',
+]
+
+const REVIEW_STORAGE_KEY = 'book-search-reviews'
+const INITIAL_BATCH_SIZE = 200
+const SCROLL_BATCH_SIZE = 100
+
+function formatDate(value: string) {
+  if (!value) return '출판일 미상'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '출판일 미상'
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+}
+
+function formatPrice(value: number) {
+  if (!value || value < 0) return '가격 정보 없음'
+  return `${value.toLocaleString('ko-KR')}원`
+}
+
+function mergeUniqueBooks(currentBooks: Book[], nextBooks: Book[]) {
+  const bookMap = new Map<string, Book>()
+
+  for (const book of [...currentBooks, ...nextBooks]) {
+    bookMap.set(book.id, book)
+  }
+
+  return [...bookMap.values()].sort((first, second) =>
+    second.publishedAt.localeCompare(first.publishedAt),
+  )
+}
+
+function getReviewCount(reviews: Review[], bookId: string) {
+  return reviews.filter((review) => review.bookId === bookId).length
+}
+
+function getReviewAverage(reviews: Review[], bookId: string) {
+  const bookReviews = reviews.filter((review) => review.bookId === bookId)
+  if (bookReviews.length === 0) return null
+  return bookReviews.reduce((sum, review) => sum + review.rating, 0) / bookReviews.length
+}
+
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5" aria-label={`${rating}점`}>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <span key={index} className={index < rating ? 'text-yellow-400' : 'text-gray-300'}>
+          ★
+        </span>
+      ))}
+    </div>
+  )
+}
 
 export default function ReviewsPage() {
+  const [query, setQuery] = useState('책')
+  const [submittedQuery, setSubmittedQuery] = useState('책')
+  const [selectedGenre, setSelectedGenre] = useState<Genre>('전체')
+  const [books, setBooks] = useState<Book[]>([])
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  const [sortMode, setSortMode] = useState<SortMode>('latest')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [nextPage, setNextPage] = useState(1)
+  const [error, setError] = useState<string | null>(null)
+  const [nickname, setNickname] = useState('')
+  const [password, setPassword] = useState('')
+  const [rating, setRating] = useState(5)
+  const [comment, setComment] = useState('')
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const requestIdRef = useRef(0)
+
+  useEffect(() => {
+    const savedReviews = window.localStorage.getItem(REVIEW_STORAGE_KEY)
+    if (!savedReviews) return
+
+    try {
+      setReviews(JSON.parse(savedReviews) as Review[])
+    } catch {
+      window.localStorage.removeItem(REVIEW_STORAGE_KEY)
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(reviews))
+  }, [reviews])
+
+  const loadBooks = useCallback(
+    async ({
+      page,
+      limit,
+      replace,
+      signal,
+    }: {
+      page: number
+      limit: number
+      replace: boolean
+      signal?: AbortSignal
+    }) => {
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      if (replace) {
+        setIsLoading(true)
+      } else {
+        setIsLoadingMore(true)
+      }
+      setError(null)
+
+      try {
+        const params = new URLSearchParams({
+          query: submittedQuery,
+          page: String(page),
+          limit: String(limit),
+        })
+        const response = await fetch(`/api/books/search?${params.toString()}`, { signal })
+        const data = (await response.json()) as SearchResponse
+
+        if (!response.ok) {
+          throw new Error(data.error ?? '도서 검색에 실패했습니다.')
+        }
+
+        if (requestIdRef.current !== requestId || signal?.aborted) return
+
+        setBooks((currentBooks) => (replace ? data.books ?? [] : mergeUniqueBooks(currentBooks, data.books ?? [])))
+        setNextPage(data.nextPage)
+        setHasMore(!data.isEnd && (data.books?.length ?? 0) > 0)
+      } catch (caughtError) {
+        if (signal?.aborted) return
+        if (replace) setBooks([])
+        setError(caughtError instanceof Error ? caughtError.message : '도서 검색에 실패했습니다.')
+      } finally {
+        if (requestIdRef.current === requestId && !signal?.aborted) {
+          setIsLoading(false)
+          setIsLoadingMore(false)
+        }
+      }
+    },
+    [submittedQuery],
+  )
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setBooks([])
+    setNextPage(1)
+    setHasMore(true)
+    void loadBooks({
+      page: 1,
+      limit: INITIAL_BATCH_SIZE,
+      replace: true,
+      signal: controller.signal,
+    })
+
+    return () => controller.abort()
+  }, [loadBooks])
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || books.length === 0) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !isLoading && !isLoadingMore) {
+          void loadBooks({
+            page: nextPage,
+            limit: SCROLL_BATCH_SIZE,
+            replace: false,
+          })
+        }
+      },
+      { rootMargin: '520px 0px' },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [books.length, hasMore, isLoading, isLoadingMore, loadBooks, nextPage])
+
+  const filteredBooks = useMemo(() => {
+    if (selectedGenre === '전체') return books
+    return books.filter((book) => book.genre === selectedGenre)
+  }, [books, selectedGenre])
+
+  const selectedBookReviews = useMemo(() => {
+    if (!selectedBook) return []
+
+    const bookReviews = reviews.filter((review) => review.bookId === selectedBook.id)
+    return [...bookReviews].sort((first, second) => {
+      if (sortMode === 'rating') return second.rating - first.rating
+      return second.createdAt.localeCompare(first.createdAt)
+    })
+  }, [reviews, selectedBook, sortMode])
+
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const nextQuery = query.trim()
+    if (!nextQuery) return
+
+    setSelectedGenre('전체')
+    setSubmittedQuery(nextQuery)
+  }
+
+  function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedBook || !nickname.trim() || !password.trim() || !comment.trim()) return
+
+    const nextReview: Review = {
+      id: `${selectedBook.id}-${Date.now()}`,
+      bookId: selectedBook.id,
+      nickname: nickname.trim(),
+      password: password.trim(),
+      rating,
+      comment: comment.trim(),
+      createdAt: new Date().toISOString(),
+    }
+
+    setReviews((currentReviews) => [nextReview, ...currentReviews])
+    setNickname('')
+    setPassword('')
+    setRating(5)
+    setComment('')
+  }
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <h1 className="section-title">도서 리뷰</h1>
-      <div className="space-y-4">
-        {MOCK_REVIEWS.map((review) => (
-          <div
-            key={review.id}
-            className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm"
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <Link
-                  href={`/books/${review.bookId}`}
-                  className="font-semibold text-gray-900 hover:text-primary-600 transition-colors"
+    <div className="min-h-full bg-gray-50">
+      <section className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-8">
+          <h1 className="text-3xl font-bold text-gray-950">도서 검색</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            아래로 스크롤하면 다음 목록을 자동으로 불러옵니다.
+          </p>
+
+          <form onSubmit={handleSearch} className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <label className="sr-only" htmlFor="book-query">
+              검색어
+            </label>
+            <input
+              id="book-query"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="min-h-12 flex-1 rounded-lg border border-gray-300 bg-white px-4 text-base text-gray-900 outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+              placeholder="책 제목, 저자, 키워드를 입력하세요"
+            />
+            <button
+              type="submit"
+              className="min-h-12 rounded-lg bg-primary-600 px-6 font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              disabled={isLoading}
+            >
+              {isLoading ? '검색 중' : '검색'}
+            </button>
+          </form>
+
+          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+            {GENRES.map((genre) => {
+              const isSelected = genre === selectedGenre
+              return (
+                <button
+                  key={genre}
+                  type="button"
+                  onClick={() => setSelectedGenre(genre)}
+                  className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    isSelected
+                      ? 'border-primary-600 bg-primary-600 text-white'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300 hover:text-primary-700'
+                  }`}
                 >
-                  {review.bookTitle}
-                </Link>
-                <p className="text-sm text-gray-500 mt-0.5">{review.author}</p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex gap-0.5">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <span
-                      key={i}
-                      className={i < review.rating ? 'text-yellow-400' : 'text-gray-200'}
-                    >
-                      ★
-                    </span>
-                  ))}
+                  {genre}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">{submittedQuery} 검색 결과</h2>
+            <p className="mt-1 text-sm text-gray-500">출판날짜 최신순</p>
+          </div>
+          {(isLoading || isLoadingMore) && (
+            <p className="text-sm font-medium text-primary-600">도서를 불러오는 중입니다.</p>
+          )}
+        </div>
+
+        {error && (
+          <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error} 환경 변수 <span className="font-semibold">KAKAO_REST_API_KEY</span>와{' '}
+            <span className="font-semibold">ALADIN_TTB_KEY</span>를 확인해주세요.
+          </div>
+        )}
+
+        {!isLoading && filteredBooks.length === 0 && !error && (
+          <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-500">
+            검색 결과가 없습니다.
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {filteredBooks.map((book) => {
+            const reviewCount = getReviewCount(reviews, book.id)
+            const reviewAverage = getReviewAverage(reviews, book.id)
+
+            return (
+              <article
+                key={book.id}
+                className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:flex-row"
+              >
+                <div className="mx-auto h-44 w-32 shrink-0 overflow-hidden rounded-md bg-gray-100 sm:mx-0">
+                  {book.thumbnail ? (
+                    <img
+                      src={book.thumbnail}
+                      alt={`${book.title} 표지`}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-4 text-center text-xs text-gray-400">
+                      표지 없음
+                    </div>
+                  )}
                 </div>
-                <span className="text-xs text-gray-400">{review.createdAt}</span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span className="rounded-full bg-primary-50 px-2 py-1 font-medium text-primary-700">
+                      {book.genre}
+                    </span>
+                    <span>{formatDate(book.publishedAt)}</span>
+                    {book.status && <span>{book.status}</span>}
+                  </div>
+                  <h3 className="mt-2 text-lg font-bold leading-7 text-gray-950">{book.title}</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {book.authors.join(', ') || '저자 정보 없음'} · {book.publisher || '출판사 정보 없음'}
+                  </p>
+                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-gray-600">
+                    {book.contents || '도서 소개가 없습니다.'}
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-700">
+                    <span>정가 {formatPrice(book.price)}</span>
+                    <span>판매가 {formatPrice(book.salePrice)}</span>
+                    {book.aladinCategoryName && (
+                      <span className="text-gray-500">{book.aladinCategoryName}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 flex-row items-center justify-between gap-3 border-t border-gray-100 pt-4 sm:w-36 sm:flex-col sm:items-stretch sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                  <div className="text-sm text-gray-600">
+                    <p className="font-semibold text-gray-900">
+                      리뷰 {reviewCount.toLocaleString('ko-KR')}개
+                    </p>
+                    <p>{reviewAverage ? `평균 ${reviewAverage.toFixed(1)}점` : '첫 리뷰를 남겨보세요'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook(book)}
+                    className="rounded-lg border border-primary-200 px-4 py-2 text-sm font-semibold text-primary-700 transition hover:bg-primary-50"
+                  >
+                    리뷰 보기
+                  </button>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+
+        {isLoading && books.length === 0 && (
+          <div className="space-y-4">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="h-48 animate-pulse rounded-lg bg-white" />
+            ))}
+          </div>
+        )}
+
+        <div ref={sentinelRef} className="h-12" aria-hidden="true" />
+
+        {isLoadingMore && (
+          <p className="pb-8 text-center text-sm font-medium text-primary-600">
+            다음 도서 목록을 불러오는 중입니다.
+          </p>
+        )}
+
+        {!hasMore && books.length > 0 && (
+          <p className="pb-8 text-center text-sm text-gray-400">모든 검색 결과를 불러왔습니다.</p>
+        )}
+      </main>
+
+      {selectedBook && (
+        <div className="fixed inset-0 z-50 flex items-end bg-gray-950/50 p-0 sm:items-center sm:p-6">
+          <div className="mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
+            <div className="border-b border-gray-200 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-primary-600">{selectedBook.genre}</p>
+                  <h2 className="mt-1 text-xl font-bold text-gray-950">{selectedBook.title}</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedBook.authors.join(', ') || '저자 정보 없음'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBook(null)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  닫기
+                </button>
               </div>
             </div>
-            <p className="text-gray-700 text-sm leading-relaxed">{review.content}</p>
+
+            <div className="overflow-y-auto p-5">
+              <form onSubmit={handleReviewSubmit} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={nickname}
+                    onChange={(event) => setNickname(event.target.value)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500"
+                    placeholder="닉네임"
+                  />
+                  <input
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type="password"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500"
+                    placeholder="비밀번호"
+                  />
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <select
+                    value={rating}
+                    onChange={(event) => setRating(Number(event.target.value))}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500"
+                  >
+                    {[5, 4, 3, 2, 1].map((value) => (
+                      <option key={value} value={value}>
+                        {value}점
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500"
+                    maxLength={80}
+                    placeholder="한 줄 평"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                  >
+                    등록
+                  </button>
+                </div>
+              </form>
+
+              <div className="mt-5 flex items-center justify-between">
+                <h3 className="font-bold text-gray-900">방명록 리뷰</h3>
+                <select
+                  value={sortMode}
+                  onChange={(event) => setSortMode(event.target.value as SortMode)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500"
+                >
+                  <option value="latest">최신순</option>
+                  <option value="rating">평점 높은순</option>
+                </select>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {selectedBookReviews.map((review) => (
+                  <article key={review.id} className="rounded-lg border border-gray-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900">{review.nickname}</p>
+                        <p className="mt-1 text-xs text-gray-400">{formatDate(review.createdAt)}</p>
+                      </div>
+                      <StarRating rating={review.rating} />
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-gray-700">{review.comment}</p>
+                  </article>
+                ))}
+
+                {selectedBookReviews.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                    아직 등록된 리뷰가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
