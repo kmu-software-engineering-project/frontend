@@ -1,6 +1,14 @@
 {
+  "/_global-error/page": "app/_global-error/page.js",
   "/_not-found/page": "app/_not-found/page.js",
-  "/recommend/result/page": "app/recommend/result/page.js",
+  "/api/books/search/route": "app/api/books/search/route.js",
+  "/api/recommend/route": "app/api/recommend/route.js",
+  "/api/saseo/route": "app/api/saseo/route.js",
+  "/books/[id]/page": "app/books/[id]/page.js",
+  "/genres/page": "app/genres/page.js",
+  "/libraries/page": "app/libraries/page.js",
+  "/page": "app/page.js",
   "/recommend/page": "app/recommend/page.js",
-  "/api/recommend/route": "app/api/recommend/route.js"
+  "/recommend/result/page": "app/recommend/result/page.js",
+  "/reviews/page": "app/reviews/page.js"
 }
