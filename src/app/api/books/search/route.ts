@@ -41,21 +41,11 @@ type AladinResponse = {
   item?: AladinItem[]
 }
 
-type GenreKey =
-  | '소설'
-  | '시/에세이'
-  | '자기계발'
-  | '경제/경영'
-  | '인문'
-  | '사회/정치'
-  | '과학'
-  | '예술'
-  | '어린이'
-  | '기타'
+type GenreKey = '소설' | '에세이' | '자기계발' | '경제/경영' | '인문' | '사회/정치' | '과학' | '예술' | '어린이' | '기타'
 
 const CATEGORY_RULES: Array<{ genre: GenreKey; keywords: string[] }> = [
-  { genre: '소설', keywords: ['소설', '장르소설', '라이트 노벨'] },
-  { genre: '시/에세이', keywords: ['시', '에세이'] },
+  { genre: '소설', keywords: ['소설', '장르소설', '라이트노벨'] },
+  { genre: '에세이', keywords: ['에세이', '시'] },
   { genre: '자기계발', keywords: ['자기계발', '성공', '처세'] },
   { genre: '경제/경영', keywords: ['경제', '경영', '투자', '재테크'] },
   { genre: '인문', keywords: ['인문', '철학', '심리', '역사', '종교'] },
@@ -67,10 +57,7 @@ const CATEGORY_RULES: Array<{ genre: GenreKey; keywords: string[] }> = [
 
 function sanitizeAladinJson(text: string): AladinResponse {
   const trimmed = text.trim()
-  const jsonText = trimmed.startsWith('{')
-    ? trimmed
-    : trimmed.replace(/^[^(]*\(/, '').replace(/\);?$/, '')
-
+  const jsonText = trimmed.startsWith('{') ? trimmed : trimmed.replace(/^[^(]*\(/, '').replace(/\);?$/, '')
   return JSON.parse(jsonText) as AladinResponse
 }
 
@@ -79,11 +66,7 @@ function stripTags(value: string) {
 }
 
 function getIsbnParts(isbn: string) {
-  const parts = isbn
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-
+  const parts = isbn.split(/\s+/).map((part) => part.trim()).filter(Boolean)
   return {
     isbn10: parts.find((part) => part.length === 10),
     isbn13: parts.find((part) => part.length === 13),
@@ -96,13 +79,9 @@ function normalizeComparable(value: string) {
 
 function pickGenre(categoryName?: string): GenreKey {
   if (!categoryName) return '기타'
-
   for (const rule of CATEGORY_RULES) {
-    if (rule.keywords.some((keyword) => categoryName.includes(keyword))) {
-      return rule.genre
-    }
+    if (rule.keywords.some((keyword) => categoryName.includes(keyword))) return rule.genre
   }
-
   return '기타'
 }
 
@@ -126,10 +105,7 @@ async function lookupAladinByIsbn(ttbKey: string, isbn: string) {
     OptResult: 'categoryIdList',
   })
 
-  const response = await fetch(`${ALADIN_ITEM_LOOKUP_URL}?${params.toString()}`, {
-    cache: 'no-store',
-  })
-
+  const response = await fetch(`${ALADIN_ITEM_LOOKUP_URL}?${params.toString()}`, { cache: 'no-store' })
   if (!response.ok) return null
 
   const data = sanitizeAladinJson(await response.text())
@@ -152,10 +128,7 @@ async function searchAladinByTitleAndAuthor(ttbKey: string, book: KakaoBook) {
     Version: '20131101',
   })
 
-  const response = await fetch(`${ALADIN_ITEM_SEARCH_URL}?${params.toString()}`, {
-    cache: 'no-store',
-  })
-
+  const response = await fetch(`${ALADIN_ITEM_SEARCH_URL}?${params.toString()}`, { cache: 'no-store' })
   if (!response.ok) return null
 
   const data = sanitizeAladinJson(await response.text())
@@ -178,9 +151,7 @@ async function enrichBook(ttbKey: string | undefined, book: KakaoBook) {
 
   if (ttbKey) {
     try {
-      aladinItem =
-        (await lookupAladinByIsbn(ttbKey, book.isbn)) ??
-        (await searchAladinByTitleAndAuthor(ttbKey, book))
+      aladinItem = (await lookupAladinByIsbn(ttbKey, book.isbn)) ?? (await searchAladinByTitleAndAuthor(ttbKey, book))
     } catch {
       aladinItem = null
     }
@@ -210,11 +181,7 @@ async function enrichBook(ttbKey: string | undefined, book: KakaoBook) {
   }
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  mapper: (item: T) => Promise<R>,
-) {
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>) {
   const results: R[] = []
   let index = 0
 
@@ -235,10 +202,7 @@ export async function GET(request: Request) {
   const aladinKey = process.env.ALADIN_TTB_KEY ?? process.env.NEXT_PUBLIC_ALADIN_TTB_KEY
 
   if (!kakaoKey) {
-    return NextResponse.json(
-      { error: 'KAKAO_REST_API_KEY is required to search books.' },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: 'KAKAO_REST_API_KEY is required to search books.' }, { status: 500 })
   }
 
   const { searchParams } = new URL(request.url)
@@ -252,11 +216,7 @@ export async function GET(request: Request) {
     let nextPage = startPage
     let isEnd = startPage > KAKAO_LAST_PAGE
 
-    for (
-      let page = startPage;
-      page < startPage + pageCount && page <= KAKAO_LAST_PAGE && books.length < limit;
-      page += 1
-    ) {
+    for (let page = startPage; page < startPage + pageCount && page <= KAKAO_LAST_PAGE && books.length < limit; page += 1) {
       const params = new URLSearchParams({
         query,
         sort: 'latest',
@@ -265,36 +225,26 @@ export async function GET(request: Request) {
       })
 
       const response = await fetch(`${KAKAO_BOOK_SEARCH_URL}?${params.toString()}`, {
-        headers: {
-          Authorization: `KakaoAK ${kakaoKey}`,
-        },
+        headers: { Authorization: `KakaoAK ${kakaoKey}` },
         cache: 'no-store',
       })
 
       if (!response.ok) {
-        return NextResponse.json(
-          { error: 'Failed to fetch books from Kakao.' },
-          { status: response.status },
-        )
+        return NextResponse.json({ error: 'Failed to fetch books from Kakao.' }, { status: response.status })
       }
 
       const data = (await response.json()) as KakaoResponse
       books.push(...data.documents)
       nextPage = page + 1
       isEnd = data.meta.is_end || nextPage > KAKAO_LAST_PAGE
-
       if (data.meta.is_end) break
     }
 
-    const uniqueBooks = Array.from(
-      new Map(books.map((book) => [getIsbnParts(book.isbn).isbn13 ?? book.url, book])).values(),
-    )
+    const uniqueBooks = Array.from(new Map(books.map((book) => [getIsbnParts(book.isbn).isbn13 ?? book.url, book])).values())
       .sort((first, second) => second.datetime.localeCompare(first.datetime))
       .slice(0, limit)
 
-    const enrichedBooks = await mapWithConcurrency(uniqueBooks, 8, (book) =>
-      enrichBook(aladinKey, book),
-    )
+    const enrichedBooks = await mapWithConcurrency(uniqueBooks, 8, (book) => enrichBook(aladinKey, book))
 
     return NextResponse.json({
       books: enrichedBooks,

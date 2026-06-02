@@ -1,47 +1,55 @@
+import Link from 'next/link'
+
 export default function Footer() {
+  const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? process.env.CONTACT_EMAIL
+
   return (
-    <footer className="bg-gray-900 text-gray-400 mt-auto">
-      <div className="max-w-6xl mx-auto px-4 py-10">
-        <div className="flex flex-col md:flex-row justify-between gap-6">
+    <footer className="mt-auto border-t border-stone-900/10 bg-stone-950 text-stone-300">
+      <div className="page-shell py-10">
+        <div className="grid gap-8 md:grid-cols-[1.2fr_0.8fr]">
           <div>
-            <p className="text-white font-bold text-lg mb-1">📚 BookAI</p>
-            <p className="text-sm">AI가 당신에게 딱 맞는 책을 추천해 드립니다.</p>
+            <p className="text-lg font-semibold text-white">Re:Ading</p>
+            <p className="mt-2 max-w-lg text-sm leading-6 text-stone-400">
+              실제 도서 데이터와 독자 리뷰를 연결해 다음에 읽을 책을 더 쉽게 고를 수 있도록 돕는 독서 추천 서비스입니다.
+            </p>
+            {contactEmail ? (
+              <p className="mt-3 text-sm text-stone-400">
+                문의: <a href={`mailto:${contactEmail}`} className="hover:text-white">{contactEmail}</a>
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-stone-400">문의 메일: 환경 변수 NEXT_PUBLIC_CONTACT_EMAIL 설정 필요</p>
+            )}
           </div>
-          <div className="flex gap-8 text-sm">
-            <div>
-              <p className="text-white font-medium mb-2">서비스</p>
-              <ul className="space-y-1">
-                <li>
-                  <a href="/genres" className="hover:text-white transition-colors">
-                    장르별 도서
-                  </a>
-                </li>
-                <li>
-                  <a href="/reviews" className="hover:text-white transition-colors">
-                    도서 리뷰
-                  </a>
-                </li>
-                <li>
-                  <a href="/recommend" className="hover:text-white transition-colors">
-                    AI 추천
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <p className="text-white font-medium mb-2">정보</p>
-              <ul className="space-y-1">
-                <li>
-                  <a href="/libraries" className="hover:text-white transition-colors">
-                    도서관 찾기
-                  </a>
-                </li>
-              </ul>
-            </div>
+
+          <div>
+            <p className="mb-3 font-medium text-white">바로가기</p>
+            <ul className="grid gap-2 text-sm sm:grid-cols-2 md:grid-cols-1">
+              <li>
+                <Link href="/genres" className="hover:text-white">
+                  장르별 소개
+                </Link>
+              </li>
+              <li>
+                <Link href="/libraries" className="hover:text-white">
+                  도서관 맵
+                </Link>
+              </li>
+              <li>
+                <Link href="/recommend" className="hover:text-white">
+                  맞춤 추천
+                </Link>
+              </li>
+              <li>
+                <Link href="/reviews" className="hover:text-white">
+                  독자 리뷰
+                </Link>
+              </li>
+            </ul>
           </div>
         </div>
-        <div className="border-t border-gray-700 mt-8 pt-6 text-xs text-center">
-          © 2026 BookAI. All rights reserved.
+
+        <div className="mt-8 border-t border-white/10 pt-6 text-center text-xs text-stone-500">
+          © 2026 Re:Ading. All rights reserved.
         </div>
       </div>
     </footer>

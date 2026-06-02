@@ -7,10 +7,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  primary: 'bg-primary-600 text-white hover:bg-primary-700 disabled:bg-primary-300',
-  secondary: 'bg-secondary-500 text-white hover:bg-secondary-600 disabled:bg-secondary-300',
-  outline: 'border border-primary-600 text-primary-600 hover:bg-primary-50 disabled:opacity-50',
-  ghost: 'text-gray-600 hover:bg-gray-100 disabled:opacity-50',
+  primary: 'bg-stone-950 text-white hover:bg-primary-700 disabled:bg-stone-300',
+  secondary: 'bg-primary-500 text-white hover:bg-primary-600 disabled:bg-primary-200',
+  outline: 'border border-stone-300 text-stone-800 hover:border-primary-400 hover:bg-primary-50 disabled:opacity-50',
+  ghost: 'text-stone-600 hover:bg-white/70 disabled:opacity-50',
 }
 
 const sizes = {
@@ -28,7 +28,7 @@ export default function Button({
 }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`inline-flex items-center justify-center rounded-full font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {children}
