@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:8000';
 
-/* ── Korean → backend enum mappings ── */
-
 const BOOK_TYPE_MAP: Record<string, string> = {
   '소설': 'FICTION',
   '에세이': 'FICTION',
