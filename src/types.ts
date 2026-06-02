@@ -25,12 +25,14 @@ export interface Library {
   id: string
   name: string
   address: string
+  neighborhood: string
+  hours: string
+  closedDays?: string
   phone?: string
   lat?: number
   lng?: number
 }
 
-// A 담당 영역 — 타입 정의만 여기에, 구현은 A가 별도 파일에서 작업
 export interface RecommendInput {
   genre?: Genre
   keywords?: string[]

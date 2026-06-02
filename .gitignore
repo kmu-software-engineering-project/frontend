@@ -1,3 +1,13 @@
-node_modules
+# dependencies
+node_modules/
+
+# next
+.next/
+out/
+
+# build
+dist/
+
+# env
 .env
-.next
+.env.local

@@ -25,9 +25,9 @@ type RecommendedBook = {
 const PAGE_SIZE = 20
 
 const SASEO_GENRES: SaseoGenre[] = [
-  { code: 11, label: '문학', description: '소설, 시, 에세이와 이야기의 감각' },
-  { code: 6, label: '인문과학', description: '철학, 역사, 예술과 삶의 질문' },
-  { code: 5, label: '사회과학', description: '사회, 경제, 교육과 현실 읽기' },
+  { code: 11, label: '문학', description: '소설, 시, 에세이처럼 이야기의 감각이 살아 있는 책' },
+  { code: 6, label: '인문과학', description: '철학, 역사, 예술과 삶의 질문을 다루는 책' },
+  { code: 5, label: '사회과학', description: '사회, 경제, 교육과 현실을 읽는 책' },
   { code: 4, label: '자연과학', description: '과학, 기술, 자연을 이해하는 책' },
 ]
 
@@ -47,6 +47,15 @@ function getNodeText(parent: Element, tagName: string) {
   return parent.getElementsByTagName(tagName)[0]?.textContent?.trim() ?? ''
 }
 
+function getFirstNodeText(parent: Element, tagNames: string[]) {
+  for (const tagName of tagNames) {
+    const value = getNodeText(parent, tagName)
+    if (value) return value
+  }
+
+  return ''
+}
+
 function toNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -60,7 +69,14 @@ function normalizeCoverUrl(path: string) {
 }
 
 function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function parseRecommendationXml(xmlText: string) {
@@ -68,28 +84,33 @@ function parseRecommendationXml(xmlText: string) {
   const parserError = xml.getElementsByTagName('parsererror')[0]
 
   if (parserError) {
-    throw new Error('추천도서 응답을 읽을 수 없습니다.')
+    throw new Error('추천 도서 응답을 읽을 수 없습니다.')
   }
 
   const totalCount = toNumber(getNodeText(xml.documentElement, 'totalCount'))
   const nodes = Array.from(xml.getElementsByTagName('item'))
 
   const books = nodes.map((node, index): RecommendedBook => {
-    const recomNo = getNodeText(node, 'recom_no')
-    const controlNo = getNodeText(node, 'control_no')
+    const recomNo = getFirstNodeText(node, ['recomNo', 'recom_no'])
+    const controlNo = getFirstNodeText(node, ['controlNo', 'control_no'])
 
     return {
-      id: controlNo || recomNo || `${getNodeText(node, 'recom_code')}-${index}`,
-      genre: getNodeText(node, 'decode'),
-      title: getNodeText(node, 'recom_title'),
-      author: getNodeText(node, 'recom_author'),
-      publisher: getNodeText(node, 'recom_publisher'),
-      coverUrl: normalizeCoverUrl(getNodeText(node, 'recom_file_path')),
-      contents: stripHtml(getNodeText(node, 'recom_contents')),
-      recomYear: toNumber(getNodeText(node, 'recom_year')),
-      recomMonth: toNumber(getNodeText(node, 'recom_month')),
-      publishYear: toNumber(getNodeText(node, 'publish_year')),
-      isbn: getNodeText(node, 'recome_isbn'),
+      id:
+        controlNo ||
+        recomNo ||
+        `${getFirstNodeText(node, ['drCode', 'drcode', 'recom_code'])}-${index}`,
+      genre: getFirstNodeText(node, ['drCodeName', 'decodeName', 'decode']),
+      title: getFirstNodeText(node, ['recomtitle', 'recom_title']),
+      author: getFirstNodeText(node, ['recomauthor', 'recom_author']),
+      publisher: getFirstNodeText(node, ['recompublisher', 'recom_publisher']),
+      coverUrl: normalizeCoverUrl(getFirstNodeText(node, ['recomfilepath', 'recom_file_path'])),
+      contents: stripHtml(
+        getFirstNodeText(node, ['recomcontents', 'recomcontens', 'recom_contents']),
+      ),
+      recomYear: toNumber(getFirstNodeText(node, ['recomYear', 'recom_year'])),
+      recomMonth: toNumber(getFirstNodeText(node, ['recomMonth', 'recom_month'])),
+      publishYear: toNumber(getFirstNodeText(node, ['publishYear', 'publish_year'])),
+      isbn: getFirstNodeText(node, ['recomisbn', 'recome_isbn']),
     }
   })
 
@@ -113,6 +134,7 @@ export default function GenresPage() {
   const [error, setError] = useState<string | null>(null)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const requestIdRef = useRef(0)
+  const totalCountRef = useRef(0)
 
   const selectedGenre = useMemo(
     () => SASEO_GENRES.find((genre) => genre.code === selectedCode) ?? SASEO_GENRES[0],
@@ -120,67 +142,61 @@ export default function GenresPage() {
   )
   const hasMore = totalCount > books.length || (totalCount === 0 && books.length >= PAGE_SIZE)
 
-  const loadBooks = useCallback(
-    async (pageToLoad: number, code: number) => {
-      const requestId = requestIdRef.current + 1
-      requestIdRef.current = requestId
-      setIsLoading(true)
-      setError(null)
+  const fetchBooksRange = useCallback(async (code: number, startRow: number, endRow: number) => {
+    const params = new URLSearchParams({
+      drCode: String(code),
+      startRowNumApi: String(startRow),
+      endRowNumApi: String(endRow),
+    })
+    const response = await fetch(`/api/saseo?${params.toString()}`)
 
-      const startRowNumApi = pageToLoad * PAGE_SIZE + 1
-      const endRowNemApi = startRowNumApi + PAGE_SIZE - 1
+    if (!response.ok) throw new Error('추천 도서 정보를 불러오지 못했습니다.')
 
-      try {
-        const params = new URLSearchParams({
-          drCode: String(code),
-          startRowNumApi: String(startRowNumApi),
-          endRowNemApi: String(endRowNemApi),
-        })
-        const response = await fetch(`/api/saseo?${params.toString()}`)
+    return parseRecommendationXml(await response.text())
+  }, [])
 
-        if (!response.ok) {
-          throw new Error('추천도서 정보를 불러오지 못했습니다.')
-        }
+  const loadBooks = useCallback(async (pageToLoad: number, code: number) => {
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    setIsLoading(true)
+    setError(null)
 
-        const xmlText = await response.text()
-        const result = parseRecommendationXml(xmlText)
+    try {
+      const knownTotalCount =
+        pageToLoad === 0 ? (await fetchBooksRange(code, 1, 1)).totalCount : totalCountRef.current
+      const rangeEnd = Math.max(knownTotalCount - pageToLoad * PAGE_SIZE, 0)
+      const rangeStart = Math.max(rangeEnd - PAGE_SIZE + 1, 1)
+      const result =
+        rangeEnd > 0 ? await fetchBooksRange(code, rangeStart, rangeEnd) : { books: [], totalCount: 0 }
 
-        if (requestIdRef.current !== requestId) return
+      if (requestIdRef.current !== requestId) return
 
-        setTotalCount(result.totalCount)
-        setBooks((currentBooks) => {
-          const nextBooks = pageToLoad === 0 ? result.books : [...currentBooks, ...result.books]
-          const uniqueBooks = Array.from(new Map(nextBooks.map((book) => [book.id, book])).values())
-          return sortByRecentRecommendation(uniqueBooks)
-        })
-        setPage(pageToLoad + 1)
-      } catch (caughtError) {
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : '추천도서 정보를 불러오지 못했습니다.',
-        )
-      } finally {
-        if (requestIdRef.current === requestId) {
-          setIsLoading(false)
-        }
-      }
-    },
-    [],
-  )
+      const nextTotalCount = result.totalCount || knownTotalCount
+      totalCountRef.current = nextTotalCount
+      setTotalCount(nextTotalCount)
+      setBooks((currentBooks) => {
+        const nextBooks = pageToLoad === 0 ? result.books : [...currentBooks, ...result.books]
+        const uniqueBooks = Array.from(new Map(nextBooks.map((book) => [book.id, book])).values())
+        return sortByRecentRecommendation(uniqueBooks)
+      })
+      setPage(pageToLoad + 1)
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : '추천 도서 정보를 불러오지 못했습니다.')
+    } finally {
+      if (requestIdRef.current === requestId) setIsLoading(false)
+    }
+  }, [fetchBooksRange])
 
   useEffect(() => {
     const genreFromQuery = new URLSearchParams(window.location.search).get('genre')
     const matchedCode = genreFromQuery ? QUERY_GENRE_MAP[genreFromQuery] : undefined
-
-    if (matchedCode) {
-      setSelectedCode(matchedCode)
-    }
+    if (matchedCode) setSelectedCode(matchedCode)
   }, [])
 
   useEffect(() => {
     setBooks([])
     setTotalCount(0)
+    totalCountRef.current = 0
     setPage(0)
     void loadBooks(0, selectedCode)
   }, [loadBooks, selectedCode])
@@ -191,9 +207,7 @@ export default function GenresPage() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !isLoading && hasMore) {
-          void loadBooks(page, selectedCode)
-        }
+        if (entry.isIntersecting && !isLoading && hasMore) void loadBooks(page, selectedCode)
       },
       { rootMargin: '360px 0px' },
     )
@@ -203,61 +217,59 @@ export default function GenresPage() {
   }, [hasMore, isLoading, loadBooks, page, selectedCode])
 
   return (
-    <div className="min-h-full bg-gray-50">
-      <section className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-10">
-          <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="min-h-full">
+      <section className="border-b border-stone-900/10 bg-white/35">
+        <div className="page-shell py-12">
+          <p className="eyebrow">Category</p>
+          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-950">장르별 추천도서</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600">
-                사서가 직접 고른 추천도서를 분야별로 모았습니다. 추천년도가 최신인 책부터
-                보여주고, 화면 아래에 닿으면 다음 목록을 비동기로 불러옵니다.
+              <h1 className="text-4xl font-light tracking-tight text-stone-950">분야별 추천 도서</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-stone-600">
+                국립중앙도서관 사서 추천 목록을 분야별로 모았습니다. 아래로 스크롤하면 다음 목록을 이어서 불러옵니다.
               </p>
             </div>
-            <div className="text-sm text-gray-500">
+            <p className="text-sm text-stone-500">
               {totalCount > 0 ? `${books.length.toLocaleString()} / ${totalCount.toLocaleString()}권` : '불러오는 중'}
-            </div>
+            </p>
           </div>
         </div>
       </section>
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="page-shell py-8">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {SASEO_GENRES.map((genre) => {
             const isSelected = genre.code === selectedCode
-
             return (
               <button
                 key={genre.code}
                 type="button"
                 onClick={() => setSelectedCode(genre.code)}
-                className={`rounded-lg border p-4 text-left transition-colors ${
+                className={`rounded-lg border p-4 text-left transition ${
                   isSelected
-                    ? 'border-primary-500 bg-primary-50 text-primary-900'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-primary-200'
+                    ? 'border-stone-950 bg-stone-950 text-white shadow-soft'
+                    : 'border-stone-900/10 bg-white/65 text-stone-700 hover:border-primary-300 hover:bg-white'
                 }`}
               >
                 <span className="text-base font-semibold">{genre.label}</span>
-                <span className="mt-1 block text-xs leading-5 text-gray-500">{genre.description}</span>
+                <span className={`mt-2 block text-xs leading-5 ${isSelected ? 'text-stone-300' : 'text-stone-500'}`}>
+                  {genre.description}
+                </span>
               </button>
             )
           })}
         </div>
 
-        <div className="mt-8 flex items-center justify-between">
+        <div className="mt-10 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{selectedGenre.label} 추천도서</h2>
-            <p className="mt-1 text-sm text-gray-500">추천년도와 추천월 기준 최신순</p>
+            <p className="eyebrow">Selected</p>
+            <h2 className="mt-2 text-2xl font-semibold text-stone-950">{selectedGenre.label} 추천 도서</h2>
           </div>
-          {isLoading && books.length > 0 && (
-            <p className="text-sm font-medium text-primary-600">다음 목록 불러오는 중</p>
-          )}
+          {isLoading && books.length > 0 && <p className="text-sm font-medium text-primary-700">다음 목록을 불러오는 중</p>}
         </div>
 
         {error && (
           <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error} 환경 변수 <span className="font-semibold">NL_SASEO_API_KEY</span>를 설정한 뒤 다시
-            시도해 주세요.
+            {error} 환경 변수 <span className="font-semibold">NL_SASEO_API_KEY</span>를 확인해 주세요.
           </div>
         )}
 
@@ -265,42 +277,36 @@ export default function GenresPage() {
           {books.map((book) => (
             <article
               key={book.id}
-              className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md"
+              className="overflow-hidden rounded-lg border border-stone-900/10 bg-white/75 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-soft"
             >
-              <div className="relative aspect-[3/4] bg-gray-100">
+              <div className="relative aspect-[3/4] bg-primary-100">
                 {book.coverUrl ? (
-                  <img
-                    src={book.coverUrl}
-                    alt={`${book.title} 표지`}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={book.coverUrl} alt={`${book.title} 표지`} className="h-full w-full object-cover" loading="lazy" />
                 ) : (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-gray-400">
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-stone-400">
                     표지 이미지 없음
                   </div>
                 )}
-                <span className="absolute left-3 top-3 rounded-md bg-white/95 px-2 py-1 text-xs font-semibold text-primary-700 shadow-sm">
-                  {book.recomYear || '-'}년 추천
+                <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-primary-800 shadow-sm">
+                  {book.recomYear || '-'} 추천
                 </span>
               </div>
               <div className="p-4">
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-2 text-xs text-stone-500">
                   <span>{book.genre || selectedGenre.label}</span>
                   {book.recomMonth > 0 && <span>{book.recomMonth}월</span>}
                 </div>
-                <h3 className="mt-2 line-clamp-2 min-h-12 text-base font-semibold leading-6 text-gray-950">
+                <h3 className="mt-2 line-clamp-2 min-h-12 text-base font-semibold leading-6 text-stone-950">
                   {book.title || '제목 미상'}
                 </h3>
-                <p className="mt-2 line-clamp-1 text-sm text-gray-600">{book.author || '작가 미상'}</p>
-                <div className="mt-3 space-y-1 text-xs text-gray-500">
+                <p className="mt-2 line-clamp-1 text-sm text-stone-600">{book.author || '작가 미상'}</p>
+                <div className="mt-3 space-y-1 text-xs text-stone-500">
                   {book.publisher && <p className="line-clamp-1">출판사 {book.publisher}</p>}
                   {book.publishYear > 0 && <p>발행 {book.publishYear}년</p>}
                   {book.isbn && <p className="line-clamp-1">ISBN {book.isbn}</p>}
                 </div>
-                {book.contents && (
-                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-gray-600">{book.contents}</p>
-                )}
+                {book.contents && <p className="mt-3 line-clamp-3 text-sm leading-6 text-stone-600">{book.contents}</p>}
               </div>
             </article>
           ))}
@@ -309,12 +315,12 @@ export default function GenresPage() {
         {isLoading && books.length === 0 && (
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                <div className="aspect-[3/4] animate-pulse bg-gray-200" />
+              <div key={index} className="overflow-hidden rounded-lg border border-stone-900/10 bg-white/60">
+                <div className="aspect-[3/4] animate-pulse bg-stone-200" />
                 <div className="space-y-3 p-4">
-                  <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200" />
-                  <div className="h-5 w-full animate-pulse rounded bg-gray-200" />
-                  <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200" />
+                  <div className="h-4 w-1/2 animate-pulse rounded bg-stone-200" />
+                  <div className="h-5 w-full animate-pulse rounded bg-stone-200" />
+                  <div className="h-4 w-2/3 animate-pulse rounded bg-stone-200" />
                 </div>
               </div>
             ))}
@@ -322,16 +328,14 @@ export default function GenresPage() {
         )}
 
         {!isLoading && books.length === 0 && !error && (
-          <div className="mt-12 rounded-lg border border-gray-200 bg-white p-10 text-center text-gray-500">
-            해당 장르의 추천도서를 찾지 못했습니다.
+          <div className="mt-12 rounded-lg border border-stone-900/10 bg-white/70 p-10 text-center text-stone-500">
+            해당 분야의 추천 도서를 찾지 못했습니다.
           </div>
         )}
 
         <div ref={sentinelRef} className="h-12" aria-hidden="true" />
 
-        {!hasMore && books.length > 0 && (
-          <p className="pb-8 text-center text-sm text-gray-400">모든 추천도서를 불러왔습니다.</p>
-        )}
+        {!hasMore && books.length > 0 && <p className="pb-8 text-center text-sm text-stone-400">모든 추천 도서를 불러왔습니다.</p>}
       </main>
     </div>
   )

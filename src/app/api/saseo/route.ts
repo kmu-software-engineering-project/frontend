@@ -15,13 +15,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const drCode = searchParams.get('drCode') ?? '11'
   const startRowNumApi = searchParams.get('startRowNumApi') ?? '1'
-  const endRowNemApi = searchParams.get('endRowNemApi') ?? '20'
+  const endRowNumApi =
+    searchParams.get('endRowNumApi') ?? searchParams.get('endRowNemApi') ?? '20'
 
   const upstreamParams = new URLSearchParams({
     key: apiKey,
     drCode,
     startRowNumApi,
-    endRowNemApi,
+    endRowNumApi,
   })
 
   const startDate = searchParams.get('start_date')
