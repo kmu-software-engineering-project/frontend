@@ -52,6 +52,10 @@ function stripTags(value = '') {
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function getDescription(aladinDescription = '', kakaoContents = '') {
+  return stripTags(aladinDescription) || stripTags(kakaoContents)
+}
+
 function normalizeComparable(value = '') {
   return stripTags(value)
     .toLowerCase()
@@ -132,7 +136,7 @@ function normalizeMatchedBook(routeId: string, kakaoBook: KakaoBook, aladinItem:
     author: kakaoBook.authors.join(', ') || aladinItem.author || '저자 미상',
     publisher: kakaoBook.publisher || aladinItem.publisher || '',
     publishedAt: kakaoBook.datetime || aladinItem.pubDate || '',
-    description: kakaoBook.contents || aladinItem.description || '',
+    description: getDescription(aladinItem.description, kakaoBook.contents),
     thumbnailUrl: kakaoBook.thumbnail || aladinItem.cover || '',
     url: kakaoBook.url || aladinItem.link || '',
     isbn: isbn10 || aladinItem.isbn || '',
@@ -156,7 +160,7 @@ function normalizeAladinBook(routeId: string, aladinItem: AladinItem) {
     author: aladinItem.author || '???誘몄긽',
     publisher: aladinItem.publisher ?? '',
     publishedAt: aladinItem.pubDate ?? '',
-    description: aladinItem.description ?? '',
+    description: stripTags(aladinItem.description),
     thumbnailUrl: aladinItem.cover ?? '',
     url: aladinItem.link ?? '',
     isbn: aladinItem.isbn ?? '',

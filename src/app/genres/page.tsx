@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type SaseoGenre = {
   code: number
@@ -20,6 +20,15 @@ type RecommendedBook = {
   recomMonth: number
   publishYear: number
   isbn: string
+}
+
+type BackendReview = {
+  id: number | string
+  book_id: string
+  nickname: string
+  rating: number
+  comment: string
+  created_at: string
 }
 
 const PAGE_SIZE = 20
@@ -71,12 +80,26 @@ function normalizeCoverUrl(path: string) {
 function stripHtml(value: string) {
   return value
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
     .replace(/&#039;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function formatDate(value: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)
 }
 
 function parseRecommendationXml(xmlText: string) {
@@ -125,6 +148,18 @@ function sortByRecentRecommendation(books: RecommendedBook[]) {
   })
 }
 
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5" aria-label={`${rating}점`}>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <span key={index} className={index < rating ? 'text-primary-700' : 'text-stone-300'}>
+          ★
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function GenresPage() {
   const [selectedCode, setSelectedCode] = useState(SASEO_GENRES[0].code)
   const [books, setBooks] = useState<RecommendedBook[]>([])
@@ -136,11 +171,51 @@ export default function GenresPage() {
   const requestIdRef = useRef(0)
   const totalCountRef = useRef(0)
 
+  const [selectedBook, setSelectedBook] = useState<RecommendedBook | null>(null)
+  const [reviewsByBook, setReviewsByBook] = useState<Record<string, BackendReview[]>>({})
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [nickname, setNickname] = useState('')
+  const [password, setPassword] = useState('')
+  const [rating, setRating] = useState(5)
+  const [comment, setComment] = useState('')
+
   const selectedGenre = useMemo(
     () => SASEO_GENRES.find((genre) => genre.code === selectedCode) ?? SASEO_GENRES[0],
     [selectedCode],
   )
   const hasMore = totalCount > books.length || (totalCount === 0 && books.length >= PAGE_SIZE)
+
+  useEffect(() => {
+    if (!selectedBook) return
+    if (reviewsByBook[selectedBook.id] !== undefined) return
+
+    let cancelled = false
+    setIsLoadingReviews(true)
+    setReviewError(null)
+
+    fetch(`/api/reviews?book_id=${encodeURIComponent(selectedBook.id)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (cancelled) return
+        const list: BackendReview[] = Array.isArray(data) ? data : (data.results ?? data.reviews ?? [])
+        setReviewsByBook((prev) => ({ ...prev, [selectedBook.id]: list }))
+      })
+      .catch(() => {
+        if (!cancelled) setReviewError('리뷰를 불러오지 못했습니다.')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingReviews(false)
+      })
+
+    return () => { cancelled = true }
+  }, [selectedBook]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedBookReviews = useMemo(() => {
+    if (!selectedBook) return []
+    const bookReviews = reviewsByBook[selectedBook.id] ?? []
+    return [...bookReviews].sort((a, b) => b.created_at.localeCompare(a.created_at))
+  }, [reviewsByBook, selectedBook])
 
   const fetchBooksRange = useCallback(async (code: number, startRow: number, endRow: number) => {
     const params = new URLSearchParams({
@@ -216,6 +291,73 @@ export default function GenresPage() {
     return () => observer.disconnect()
   }, [hasMore, isLoading, loadBooks, page, selectedCode])
 
+  async function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedBook || !nickname.trim() || !password.trim() || !comment.trim()) return
+
+    setReviewError(null)
+    try {
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookId: selectedBook.id, 
+          bookTitle: selectedBook.title,
+          nickname: nickname.trim(),
+          password: password.trim(),
+          rating,
+          comment: comment.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        setReviewError(data.error ?? '리뷰 등록에 실패했습니다.')
+        return
+      }
+
+      const newReview = (await response.json()) as BackendReview
+      setReviewsByBook((prev) => ({
+        ...prev,
+        [selectedBook.id]: [newReview, ...(prev[selectedBook.id] ?? [])],
+      }))
+
+      setNickname('')
+      setPassword('')
+      setRating(5)
+      setComment('')
+    } catch {
+      setReviewError('리뷰 등록에 실패했습니다.')
+    }
+  }
+
+  async function handleDeleteReview(reviewId: number | string) {
+    const pw = window.prompt('리뷰를 삭제하려면 등록 시 입력한 비밀번호를 입력하세요.')
+    if (pw === null) return
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      })
+
+      if (!response.ok && response.status !== 204) {
+        alert('비밀번호가 올바르지 않거나 리뷰를 삭제할 수 없습니다.')
+        return
+      }
+
+      if (selectedBook) {
+        setReviewsByBook((prev) => ({
+          ...prev,
+          [selectedBook.id]: (prev[selectedBook.id] ?? []).filter((r) => String(r.id) !== String(reviewId)),
+        }))
+      }
+    } catch {
+      alert('리뷰 삭제에 실패했습니다.')
+    }
+  }
+
   return (
     <div className="min-h-full">
       <section className="border-b border-stone-900/10 bg-white/35">
@@ -277,7 +419,8 @@ export default function GenresPage() {
           {books.map((book) => (
             <article
               key={book.id}
-              className="overflow-hidden rounded-lg border border-stone-900/10 bg-white/75 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-soft"
+              onClick={() => setSelectedBook(book)}
+              className="cursor-pointer overflow-hidden rounded-lg border border-stone-900/10 bg-white/75 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-soft"
             >
               <div className="relative aspect-[3/4] bg-primary-100">
                 {book.coverUrl ? (
@@ -337,6 +480,128 @@ export default function GenresPage() {
 
         {!hasMore && books.length > 0 && <p className="pb-8 text-center text-sm text-stone-400">모든 추천 도서를 불러왔습니다.</p>}
       </main>
+
+      {selectedBook && (
+        <div className="fixed inset-0 z-50 flex items-end bg-stone-950/50 p-0 sm:items-center sm:p-6">
+          <div className="mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-[#fffaf1] shadow-xl sm:rounded-2xl">
+            <div className="border-b border-stone-900/10 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-[8rem_1fr]">
+                  {selectedBook.coverUrl && (
+                    <div className="hidden aspect-[3/4] w-32 shrink-0 overflow-hidden rounded-lg bg-primary-100 sm:block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={selectedBook.coverUrl} alt={`${selectedBook.title} 표지`} className="h-full w-full object-cover" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-primary-700">{selectedBook.genre || selectedGenre.label}</p>
+                    <h2 className="mt-1 text-xl font-semibold text-stone-950">{selectedBook.title}</h2>
+                    <p className="mt-1 text-sm text-stone-500">{selectedBook.author || '저자 정보 없음'}</p>
+                    {selectedBook.publisher && (
+                      <p className="mt-1 text-xs text-stone-400">출판사 {selectedBook.publisher}</p>
+                    )}
+                    {selectedBook.contents && (
+                      <p className="mt-3 text-sm leading-6 text-stone-600">{selectedBook.contents}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBook(null)}
+                  className="shrink-0 rounded-full border border-stone-900/10 px-3 py-2 text-sm font-semibold text-stone-600 hover:bg-white"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto p-5">
+              {reviewError && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reviewError}</div>
+              )}
+
+              <form onSubmit={handleReviewSubmit} className="rounded-lg border border-stone-900/10 bg-white/60 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={nickname}
+                    onChange={(event) => setNickname(event.target.value)}
+                    className="rounded-full border border-stone-900/10 px-4 py-2 text-sm outline-none focus:border-primary-400"
+                    placeholder="닉네임"
+                  />
+                  <input
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type="password"
+                    className="rounded-full border border-stone-900/10 px-4 py-2 text-sm outline-none focus:border-primary-400"
+                    placeholder="비밀번호"
+                  />
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <select
+                    value={rating}
+                    onChange={(event) => setRating(Number(event.target.value))}
+                    className="rounded-full border border-stone-900/10 px-4 py-2 text-sm outline-none focus:border-primary-400"
+                  >
+                    {[5, 4, 3, 2, 1].map((value) => (
+                      <option key={value} value={value}>
+                        {value}점
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    className="min-w-0 flex-1 rounded-full border border-stone-900/10 px-4 py-2 text-sm outline-none focus:border-primary-400"
+                    maxLength={80}
+                    placeholder="한 줄 리뷰"
+                  />
+                  <button type="submit" className="rounded-full bg-stone-950 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700">
+                    등록
+                  </button>
+                </div>
+              </form>
+
+              <div className="mt-5">
+                <h3 className="font-semibold text-stone-950">리뷰</h3>
+              </div>
+
+              {isLoadingReviews && (
+                <div className="mt-3 py-6 text-center text-sm text-primary-700">리뷰를 불러오는 중입니다.</div>
+              )}
+
+              <div className="mt-3 space-y-3">
+                {selectedBookReviews.map((review) => (
+                  <article key={review.id} className="rounded-lg border border-stone-900/10 bg-white/60 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-stone-950">{review.nickname}</p>
+                        <p className="mt-1 text-xs text-stone-400">{formatDate(review.created_at)}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StarRating rating={review.rating} />
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReview(review.id)}
+                          className="text-xs text-stone-400 hover:text-red-500"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-stone-700">{review.comment}</p>
+                  </article>
+                ))}
+
+                {!isLoadingReviews && selectedBookReviews.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-stone-300 p-8 text-center text-sm text-stone-500">
+                    아직 등록된 리뷰가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

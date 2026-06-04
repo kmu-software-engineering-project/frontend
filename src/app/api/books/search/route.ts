@@ -31,6 +31,7 @@ type KakaoResponse = {
 type AladinItem = {
   title?: string
   author?: string
+  description?: string
   isbn?: string
   isbn13?: string
   categoryId?: number

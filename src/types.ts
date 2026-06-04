@@ -26,9 +26,10 @@ export interface Library {
   name: string
   address: string
   neighborhood: string
-  hours: string
+  hours?: string
   closedDays?: string
   phone?: string
+  homepage?: string
   lat?: number
   lng?: number
 }

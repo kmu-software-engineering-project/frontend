@@ -31,51 +31,80 @@ declare global {
   }
 }
 
-const ALL_NEIGHBORHOODS = '전체'
+const ALL_DISTRICTS = '전체'
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
 
-function loadKakaoMaps(apiKey: string) {
+function loadKakaoMapsSafely(apiKey: string) {
   return new Promise<void>((resolve, reject) => {
+    let settled = false
+
+    const finish = () => {
+      if (settled) return
+      const maps = window.kakao?.maps
+      if (!maps) {
+        settled = true
+        reject(new Error('Kakao 지도 SDK를 초기화하지 못했습니다. JavaScript 키 설정을 확인해 주세요.'))
+        return
+      }
+
+      maps.load(() => {
+        if (settled) return
+        settled = true
+        resolve()
+      })
+    }
+
     if (window.kakao?.maps) {
-      window.kakao.maps.load(resolve)
+      finish()
       return
     }
 
-    const existingScript = document.querySelector<HTMLScriptElement>('script[data-kakao-map-sdk="true"]')
-    if (existingScript) {
-      existingScript.addEventListener('load', () => window.kakao?.maps.load(resolve), { once: true })
-      existingScript.addEventListener('error', () => reject(new Error('지도 SDK를 불러오지 못했습니다.')), { once: true })
-      return
-    }
+    document.querySelector<HTMLScriptElement>('script[data-kakao-map-sdk="true"]')?.remove()
 
     const script = document.createElement('script')
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(apiKey)}&autoload=false`
     script.async = true
     script.dataset.kakaoMapSdk = 'true'
-    script.onload = () => window.kakao?.maps.load(resolve)
-    script.onerror = () => reject(new Error('지도 SDK를 불러오지 못했습니다.'))
+    script.onload = finish
+    script.onerror = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('Kakao 지도 SDK를 불러오지 못했습니다. 네트워크와 키 등록 도메인을 확인해 주세요.'))
+    }
     document.head.appendChild(script)
+
+    window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      script.remove()
+      reject(new Error('Kakao 지도 SDK 로딩 시간이 초과되었습니다.'))
+    }, 10000)
   })
+}
+
+function formatHomepage(homepage?: string) {
+  if (!homepage) return undefined
+  return homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')
 }
 
 export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Library[]; mapApiKey?: string }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<KakaoMap | null>(null)
   const markerRefs = useRef<KakaoMarker[]>([])
-  const [selectedNeighborhood, setSelectedNeighborhood] = useState(ALL_NEIGHBORHOODS)
+  const [selectedDistrict, setSelectedDistrict] = useState(ALL_DISTRICTS)
   const [selectedLibraryId, setSelectedLibraryId] = useState(libraries[0]?.id ?? '')
   const [isMapReady, setIsMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
 
-  const neighborhoods = useMemo(
-    () => [ALL_NEIGHBORHOODS, ...Array.from(new Set(libraries.map((library) => library.neighborhood))).sort()],
+  const districts = useMemo(
+    () => [ALL_DISTRICTS, ...Array.from(new Set(libraries.map((library) => library.neighborhood))).sort()],
     [libraries],
   )
 
   const filteredLibraries = useMemo(() => {
-    if (selectedNeighborhood === ALL_NEIGHBORHOODS) return libraries
-    return libraries.filter((library) => library.neighborhood === selectedNeighborhood)
-  }, [libraries, selectedNeighborhood])
+    if (selectedDistrict === ALL_DISTRICTS) return libraries
+    return libraries.filter((library) => library.neighborhood === selectedDistrict)
+  }, [libraries, selectedDistrict])
 
   const selectedLibrary = useMemo(() => {
     return filteredLibraries.find((library) => library.id === selectedLibraryId) ?? filteredLibraries[0]
@@ -95,7 +124,9 @@ export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Libr
 
     let isMounted = true
 
-    loadKakaoMaps(mapApiKey)
+    setMapError(null)
+
+    loadKakaoMapsSafely(mapApiKey)
       .then(() => {
         if (!isMounted || !mapContainerRef.current || !window.kakao?.maps) return
 
@@ -135,36 +166,36 @@ export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Libr
 
     if (selectedLibrary?.lat && selectedLibrary.lng) {
       mapRef.current.setCenter(new window.kakao.maps.LatLng(selectedLibrary.lat, selectedLibrary.lng))
-      mapRef.current.setLevel(selectedNeighborhood === ALL_NEIGHBORHOODS ? 8 : 5)
+      mapRef.current.setLevel(selectedDistrict === ALL_DISTRICTS ? 8 : 5)
     }
-  }, [filteredLibraries, isMapReady, selectedLibrary, selectedNeighborhood])
+  }, [filteredLibraries, isMapReady, selectedLibrary, selectedDistrict])
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className="overflow-hidden rounded-lg border border-stone-900/10 bg-white/70 shadow-sm">
         <div className="flex flex-col gap-3 border-b border-stone-900/10 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">Map</p>
-            <h2 className="mt-1 text-xl font-semibold text-stone-950">동네별 도서관 지도</h2>
+            <h2 className="mt-1 text-xl font-semibold text-stone-950">구별 도서관 지도</h2>
           </div>
           <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
-            동네
+            지역
             <select
-              value={selectedNeighborhood}
-              onChange={(event) => setSelectedNeighborhood(event.target.value)}
+              value={selectedDistrict}
+              onChange={(event) => setSelectedDistrict(event.target.value)}
               className="h-10 rounded-full border border-stone-900/10 bg-white px-4 text-sm outline-none transition focus:border-primary-400 focus:ring-4 focus:ring-primary-100"
             >
-              {neighborhoods.map((neighborhood) => (
-                <option key={neighborhood} value={neighborhood}>
-                  {neighborhood}
+              {districts.map((district) => (
+                <option key={district} value={district}>
+                  {district}
                 </option>
               ))}
             </select>
           </label>
         </div>
 
-        <div className="relative h-[28rem] min-h-[22rem] bg-primary-50">
-          <div ref={mapContainerRef} className="h-full w-full" aria-label="도서관 지도" />
+        <div className="relative bg-primary-50">
+          <div ref={mapContainerRef} style={{ width: '100%', height: '28rem' }} aria-label="도서관 지도" />
           {mapError && (
             <div className="absolute inset-0 flex items-center justify-center bg-primary-50/95 px-6 text-center text-sm font-medium text-stone-600">
               {mapError}
@@ -181,23 +212,28 @@ export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Libr
             <p className="mt-3 text-sm leading-6 text-stone-200">{selectedLibrary.address}</p>
             <dl className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-stone-400">동네</dt>
+                <dt className="text-stone-400">지역</dt>
                 <dd className="font-medium">{selectedLibrary.neighborhood}</dd>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-stone-400">운영시간</dt>
-                <dd className="font-medium">{selectedLibrary.hours}</dd>
-              </div>
-              {selectedLibrary.closedDays && (
-                <div className="flex justify-between gap-4">
-                  <dt className="text-stone-400">휴관일</dt>
-                  <dd className="text-right font-medium">{selectedLibrary.closedDays}</dd>
-                </div>
-              )}
               {selectedLibrary.phone && (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-stone-400">문의</dt>
+                  <dt className="text-stone-400">문의 번호</dt>
                   <dd className="font-medium">{selectedLibrary.phone}</dd>
+                </div>
+              )}
+              {selectedLibrary.homepage && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-stone-400">홈페이지</dt>
+                  <dd className="text-right font-medium">
+                    <a
+                      href={selectedLibrary.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-white/40 underline-offset-4 transition hover:text-primary-100"
+                    >
+                      {formatHomepage(selectedLibrary.homepage)}
+                    </a>
+                  </dd>
                 </div>
               )}
             </dl>
@@ -222,7 +258,10 @@ export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Libr
                 <span className="text-xs font-semibold text-primary-700">{library.neighborhood}</span>
                 <span className="mt-2 block text-base font-semibold text-stone-950">{library.name}</span>
                 <span className="mt-2 block text-sm leading-5 text-stone-600">{library.address}</span>
-                <span className="mt-3 block text-sm font-medium text-stone-800">{library.hours}</span>
+                {library.phone && <span className="mt-3 block text-sm font-medium text-stone-800">문의 번호 {library.phone}</span>}
+                {library.homepage && (
+                  <span className="mt-2 block text-sm font-medium text-primary-700">{formatHomepage(library.homepage)}</span>
+                )}
               </button>
             )
           })}
