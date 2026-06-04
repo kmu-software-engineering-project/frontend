@@ -28,32 +28,38 @@ type BookResponse = {
   error?: string
 }
 
-type ReaderReview = {
-  id: string
-  bookId: string
+type BackendReview = {
+  id: number | string
+  book_id: string
   nickname: string
-  password: string
   rating: number
   comment: string
-  createdAt: string
+  created_at: string
 }
 
-const REVIEW_STORAGE_KEY = 'book-search-reviews'
+function sanitizeContent(value: string) {
+  return value
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 function formatDate(value: string) {
   if (!value) return '날짜 없음'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date)
-}
-
-function readReviews() {
-  if (typeof window === 'undefined') return []
-  try {
-    return JSON.parse(window.localStorage.getItem(REVIEW_STORAGE_KEY) ?? '[]') as ReaderReview[]
-  } catch {
-    return []
-  }
 }
 
 function StarRating({ rating }: { rating: number | null }) {
@@ -73,18 +79,18 @@ export default function BookDetailPage() {
   const params = useParams()
   const bookId = params.id as string
   const [book, setBook] = useState<BookDetail | null>(null)
-  const [reviews, setReviews] = useState<ReaderReview[]>([])
+  const [reviews, setReviews] = useState<BackendReview[]>([])
   const [nickname, setNickname] = useState('')
   const [password, setPassword] = useState('')
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [errorStatus, setErrorStatus] = useState<number | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   useEffect(() => {
-    setReviews(readReviews())
-
     async function loadBook() {
       setIsLoading(true)
       setError(null)
@@ -111,40 +117,85 @@ export default function BookDetailPage() {
   }, [bookId])
 
   useEffect(() => {
-    window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(reviews))
-  }, [reviews])
+    if (!bookId) return
+    setIsLoadingReviews(true)
+
+    fetch(`/api/reviews?book_id=${encodeURIComponent(bookId)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        const list: BackendReview[] = Array.isArray(data) ? data : (data.results ?? data.reviews ?? [])
+        setReviews(list)
+      })
+      .catch(() => { /* silently ignore — show empty */ })
+      .finally(() => setIsLoadingReviews(false))
+  }, [bookId])
 
   const bookReviews = useMemo(() => {
-    if (!book) return []
-    return reviews
-      .filter((review) => review.bookId === book.id)
-      .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
-  }, [book, reviews])
+    return [...reviews].sort((first, second) => second.created_at.localeCompare(first.created_at))
+  }, [reviews])
 
   const averageRating = useMemo(() => {
     if (bookReviews.length === 0) return book?.rating ?? null
     return bookReviews.reduce((sum, review) => sum + review.rating, 0) / bookReviews.length
   }, [book?.rating, bookReviews])
 
-  function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!book || !nickname.trim() || !password.trim() || !comment.trim()) return
 
-    const nextReview: ReaderReview = {
-      id: `${book.id}-${Date.now()}`,
-      bookId: book.id,
-      nickname: nickname.trim(),
-      password: password.trim(),
-      rating,
-      comment: comment.trim(),
-      createdAt: new Date().toISOString(),
-    }
+    setReviewError(null)
+    try {
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookId: bookId,
+          bookTitle: book.title,
+          nickname: nickname.trim(),
+          password: password.trim(),
+          rating,
+          comment: comment.trim(),
+        }),
+      })
 
-    setReviews((currentReviews) => [nextReview, ...currentReviews])
-    setNickname('')
-    setPassword('')
-    setRating(5)
-    setComment('')
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        setReviewError(data.error ?? '리뷰 등록에 실패했습니다.')
+        return
+      }
+
+      const newReview = (await response.json()) as BackendReview
+      setReviews((current) => [newReview, ...current])
+
+      setNickname('')
+      setPassword('')
+      setRating(5)
+      setComment('')
+    } catch {
+      setReviewError('리뷰 등록에 실패했습니다.')
+    }
+  }
+
+  async function handleDeleteReview(reviewId: number | string) {
+    const pw = window.prompt('리뷰를 삭제하려면 등록 시 입력한 비밀번호를 입력하세요.')
+    if (pw === null) return
+
+    try {
+      const response = await fetch(`/api/reviews/${reviewId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      })
+
+      if (!response.ok && response.status !== 204) {
+        alert('비밀번호가 올바르지 않거나 리뷰를 삭제할 수 없습니다.')
+        return
+      }
+
+      setReviews((current) => current.filter((r) => String(r.id) !== String(reviewId)))
+    } catch {
+      alert('리뷰 삭제에 실패했습니다.')
+    }
   }
 
   if (isLoading) {
@@ -208,7 +259,9 @@ export default function BookDetailPage() {
             <span className="text-stone-300">/</span>
             <span>리뷰 {bookReviews.length.toLocaleString('ko-KR')}</span>
           </div>
-          {book.description && <p className="mt-5 max-w-2xl text-sm leading-7 text-stone-600">{book.description}</p>}
+          {book.description && (
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-stone-600">{sanitizeContent(book.description)}</p>
+          )}
           <div className="mt-4 space-y-1 text-xs text-stone-500">
             {book.publisher && <p>출판사: {book.publisher}</p>}
             {book.publishedAt && <p>출간일: {formatDate(book.publishedAt)}</p>}
@@ -225,6 +278,10 @@ export default function BookDetailPage() {
           </div>
           <p className="text-sm text-stone-500">{bookReviews.length.toLocaleString('ko-KR')}개 리뷰</p>
         </div>
+
+        {reviewError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{reviewError}</div>
+        )}
 
         <form onSubmit={handleReviewSubmit} className="mt-5 rounded-lg border border-stone-900/10 bg-white/70 p-5 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -267,21 +324,34 @@ export default function BookDetailPage() {
           </div>
         </form>
 
+        {isLoadingReviews && (
+          <div className="mt-5 py-6 text-center text-sm text-primary-700">리뷰를 불러오는 중입니다.</div>
+        )}
+
         <div className="mt-5 space-y-4">
           {bookReviews.map((review) => (
             <article key={review.id} className="rounded-lg border border-stone-900/10 bg-white/70 p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-stone-950">{review.nickname}</p>
-                  <p className="mt-1 text-xs text-stone-400">{formatDate(review.createdAt)}</p>
+                  <p className="mt-1 text-xs text-stone-400">{formatDate(review.created_at)}</p>
                 </div>
-                <StarRating rating={review.rating} />
+                <div className="flex items-center gap-2">
+                  <StarRating rating={review.rating} />
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReview(review.id)}
+                    className="text-xs text-stone-400 hover:text-red-500"
+                  >
+                    삭제
+                  </button>
+                </div>
               </div>
               <p className="mt-3 text-sm leading-6 text-stone-700">{review.comment}</p>
             </article>
           ))}
 
-          {bookReviews.length === 0 && (
+          {!isLoadingReviews && bookReviews.length === 0 && (
             <div className="rounded-lg border border-dashed border-stone-300 bg-white/40 p-12 text-center text-sm text-stone-500">
               아직 등록된 독자 리뷰가 없습니다.
             </div>
