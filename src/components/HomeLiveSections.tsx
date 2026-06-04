@@ -34,8 +34,31 @@ type FeaturedResponse = {
   error?: string
 }
 
+type BookDetailResponse = {
+  book?: FeaturedBook
+  error?: string
+}
+
 const REVIEW_STORAGE_KEY = 'book-search-reviews'
 const ROLLING_INTERVAL_MS = 3500
+
+function sanitizeContent(value: string) {
+  return value
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&hellip;/g, '...')
+    .replace(/&mdash;/g, '-')
+    .replace(/&ndash;/g, '-')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 function readReviews() {
   if (typeof window === 'undefined') return []
@@ -72,11 +95,11 @@ function StarRating({ rating }: { rating: number | null }) {
   )
 }
 
-function BookTile({ book, reviews }: { book: FeaturedBook; reviews: ReaderReview[] }) {
+function BookTile({ book, reviews, onSelect }: { book: FeaturedBook; reviews: ReaderReview[]; onSelect: (book: FeaturedBook) => void }) {
   const stats = getReviewStats(reviews, book.id, book.rating)
 
   return (
-    <Link href={`/books/${encodeURIComponent(book.id)}#reviews`} className="group block">
+    <button type="button" onClick={() => onSelect(book)} className="group block h-full w-full text-left">
       <article className="h-full overflow-hidden rounded-lg border border-stone-900/10 bg-white/75 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-soft">
         <div className="relative aspect-[3/4] bg-primary-100">
           {book.thumbnailUrl ? (
@@ -107,7 +130,7 @@ function BookTile({ book, reviews }: { book: FeaturedBook; reviews: ReaderReview
           </div>
         </div>
       </article>
-    </Link>
+    </button>
   )
 }
 
@@ -117,6 +140,10 @@ export default function HomeLiveSections() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedBook, setSelectedBook] = useState<FeaturedBook | null>(null)
+  const [selectedBookDetail, setSelectedBookDetail] = useState<FeaturedBook | null>(null)
+  const [isLoadingBookDetail, setIsLoadingBookDetail] = useState(false)
+  const [bookDetailError, setBookDetailError] = useState<string | null>(null)
 
   useEffect(() => {
     setReviews(readReviews())
@@ -143,6 +170,34 @@ export default function HomeLiveSections() {
 
     return () => window.clearInterval(timer)
   }, [books.length, isPaused])
+
+  useEffect(() => {
+    if (!selectedBook) return
+
+    let cancelled = false
+    setIsLoadingBookDetail(true)
+    setBookDetailError(null)
+    setSelectedBookDetail(null)
+
+    fetch(`/api/books/${encodeURIComponent(selectedBook.id)}`, { cache: 'no-store' })
+      .then(async (response) => {
+        const data = (await response.json()) as BookDetailResponse
+        if (!response.ok) throw new Error(data.error ?? '도서 상세 정보를 불러오지 못했습니다.')
+        if (!cancelled) setSelectedBookDetail(data.book ?? null)
+      })
+      .catch((caughtError) => {
+        if (!cancelled) {
+          setBookDetailError(caughtError instanceof Error ? caughtError.message : '도서 상세 정보를 불러오지 못했습니다.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingBookDetail(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBook])
 
   const activeBook = books[activeIndex]
   const topBooks = useMemo(() => books.slice(0, 8), [books])
@@ -186,9 +241,10 @@ export default function HomeLiveSections() {
 
           <div className="relative min-h-[470px]">
             {activeBook ? (
-              <Link
-                href={`/books/${encodeURIComponent(activeBook.id)}#reviews`}
-                className="group grid gap-6 rounded-lg border border-stone-900/10 bg-white/75 p-5 shadow-sm transition hover:bg-white hover:shadow-soft sm:grid-cols-[13rem_1fr]"
+              <button
+                type="button"
+                onClick={() => setSelectedBook(activeBook)}
+                className="group grid w-full gap-6 rounded-lg border border-stone-900/10 bg-white/75 p-5 text-left shadow-sm transition hover:bg-white hover:shadow-soft sm:grid-cols-[13rem_1fr]"
               >
                 <div className="relative mx-auto aspect-[3/4] w-52 overflow-hidden rounded-lg bg-primary-100 shadow-soft sm:mx-0">
                   {activeBook.thumbnailUrl ? (
@@ -213,7 +269,7 @@ export default function HomeLiveSections() {
                   <p className="mt-3 text-sm text-stone-600">{activeBook.author}</p>
                   <p className="mt-4 line-clamp-4 text-sm leading-6 text-stone-600">{activeBook.description}</p>
                 </div>
-              </Link>
+              </button>
             ) : (
               <div className="flex min-h-[360px] items-center justify-center rounded-lg border border-stone-900/10 bg-white/60 text-sm text-stone-500">
                 {error ?? '추천 도서를 불러오는 중입니다.'}
@@ -268,7 +324,7 @@ export default function HomeLiveSections() {
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {['소설', '인문', '과학', '예술'].map((genre) => (
+          {['문학', '인문과학', '사회과학', '자연과학'].map((genre) => (
             <Link
               key={genre}
               href={`/genres?genre=${encodeURIComponent(genre)}`}
@@ -300,11 +356,63 @@ export default function HomeLiveSections() {
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {topBooks.map((book) => (
-              <BookTile key={book.id} book={book} reviews={reviews} />
+              <BookTile key={book.id} book={book} reviews={reviews} onSelect={setSelectedBook} />
             ))}
           </div>
         </div>
       </section>
+
+      {selectedBook && (
+        <div className="fixed inset-0 z-50 flex items-end bg-stone-950/50 p-0 sm:items-center sm:p-6">
+          <div className="mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-[#fffaf1] shadow-xl sm:rounded-2xl">
+            <div className="border-b border-stone-900/10 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-[8rem_1fr]">
+                  {(selectedBookDetail?.thumbnailUrl ?? selectedBook.thumbnailUrl) && (
+                    <div className="hidden aspect-[3/4] w-32 shrink-0 overflow-hidden rounded-lg bg-primary-100 sm:block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={selectedBookDetail?.thumbnailUrl ?? selectedBook.thumbnailUrl}
+                        alt={`${selectedBookDetail?.title ?? selectedBook.title} 표지`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-primary-700">{selectedBookDetail?.genre ?? selectedBook.genre}</p>
+                    <h2 className="mt-1 text-xl font-semibold text-stone-950">{selectedBookDetail?.title ?? selectedBook.title}</h2>
+                    <p className="mt-1 text-sm text-stone-500">{selectedBookDetail?.author ?? selectedBook.author}</p>
+                    {isLoadingBookDetail && (
+                      <p className="mt-3 text-sm leading-6 text-primary-700">도서 상세 정보를 불러오는 중입니다.</p>
+                    )}
+                    {bookDetailError && (
+                      <p className="mt-3 text-sm leading-6 text-red-600">{bookDetailError}</p>
+                    )}
+                    <p className="mt-3 text-sm leading-6 text-stone-600">
+                      {sanitizeContent(selectedBookDetail?.description ?? selectedBook.description) || '도서 소개가 없습니다.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBook(null)}
+                  className="shrink-0 rounded-full border border-stone-900/10 px-3 py-2 text-sm font-semibold text-stone-600 hover:bg-white"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-5">
+              <Link
+                href={`/books/${encodeURIComponent(selectedBook.id)}#reviews`}
+                className="inline-flex rounded-full bg-stone-950 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+              >
+                상세 리뷰 보기
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
