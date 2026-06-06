@@ -95,11 +95,11 @@
 | S4-4 | 리뷰 목록 페이지 (`/reviews`) | B | ✅ | — |
 | S4-5 | 도서 검색 (알라딘 API) + 필터 | B | ✅ | — |
 | S4-6 | 리뷰 입력 (닉네임·비밀번호·평점·댓글) | B | ✅ | — |
-| S4-7 | 무한 스크롤 구현 | B | ⚠️ | — |
+| S4-7 | 무한 스크롤 구현 | B | ✅ | 2026-06-06 |
 
-**완료 기록**: 장르·리뷰 페이지 기본 구현 완료. 무한 스크롤 부분 구현.
+**완료 기록**: 장르·리뷰 페이지 기본 구현 완료. 무한 스크롤 완성(S4-7): `hasMore === false` 시 observer 미생성으로 경계 중복 fetch 방지.
 
-**Gate 3 검증 결과**: QA 10/11 Pass, 1 Warn (2026-05-28 실행). S4-7 무한 스크롤 미완성 — `isEnd` 경계 처리 불완전, Sprint 6 수정 예정.
+**Gate 3 검증 결과**: QA 10/11 Pass, 1 Warn (2026-05-28). S4-7 수정 완료 → QA 9/9 Pass (2026-06-06). 리포트: `qa-report-s4-7-20260606.md`
 
 ---
 
@@ -146,6 +146,7 @@
 
 | 날짜 | 스프린트 | 실행 항목 | 결과 | 비고 |
 |------|---------|----------|------|------|
+| 2026-06-06 | Sprint 4 | S4-7 무한 스크롤 isEnd 경계 처리 수정 검증 | 9/9 Pass | observer 미생성 조건 추가. 리포트: `qa-report-s4-7-20260606.md` |
 | 2026-06-06 | Sprint 6 | 서점 버튼 단일화·scrollbar-hide·normalizeLibrary 수정 종합 검증 | 13/13 Pass | 배포 차단 없음. 리포트: `qa-report-session-20260606.md` |
 | 2026-06-06 | Sprint 5 | libraries aside 스크롤 수정 검증 (타입·라우팅·변경 정합성) | 10/10 Pass, 1 Warn | normalizeLibrary hours/closedDays 미매핑 경고 → 동일 세션에서 수정 완료. 리포트: `qa-report.md` |
 | 2026-06-06 | Sprint 2 | 1차: kakao-book route + result/page 구조 검증 | 18/18 Pass | 파일 미반영 오류 발견 후 재구현 및 재검증. 리포트: `qa-report-sprint2-20260606.md` |

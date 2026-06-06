@@ -231,11 +231,11 @@ export default function ReviewsPage() {
 
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!sentinel || books.length === 0) return
+    if (!sentinel || books.length === 0 || !hasMore) return
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMore && !isLoading && !isLoadingMore) {
+        if (entry.isIntersecting && !isLoading && !isLoadingMore) {
           void loadBooks({ page: nextPage, limit: SCROLL_BATCH_SIZE, replace: false })
         }
       },
