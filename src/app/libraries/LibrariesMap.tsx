@@ -204,7 +204,7 @@ export default function LibrariesMap({ libraries, mapApiKey }: { libraries: Libr
         </div>
       </section>
 
-      <aside className="space-y-4">
+      <aside className="space-y-4 max-h-[33rem] overflow-y-auto scrollbar-hide">
         {selectedLibrary && (
           <article className="rounded-lg border border-stone-900/10 bg-stone-950 p-5 text-white shadow-soft">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-200">Selected</p>

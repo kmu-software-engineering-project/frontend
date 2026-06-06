@@ -112,10 +112,11 @@
 | S5-1 | 도서관 위치 데이터 (서울시 공공데이터 API) | B | ✅ | — |
 | S5-2 | Kakao Map SDK 연동 (`/libraries`) | B | ✅ | — |
 | S5-3 | 지도 마커 + 도서관 정보 팝업 | B | ✅ | — |
-| S5-4 | 지도 로딩 실패 시 텍스트 목록 폴백 | B | ⬜ | — |
-| S5-5 | `'use client'` 선언 및 SSR 주의사항 검토 | B | ⬜ | — |
+| S5-4 | 지도 로딩 실패 시 텍스트 목록 폴백 | B | ✅ | 2026-06-06 |
+| S5-5 | `'use client'` 선언 및 SSR 주의사항 검토 | B | ✅ | 2026-06-06 |
+| S5-6 | 도서관 정보 패널(aside) 독립 스크롤 — 지도 고정 유지 | B | ✅ | 2026-06-06 |
 
-**완료 기록**: Kakao Map 기본 연동 완료. 폴백 처리 미완.
+**완료 기록**: Kakao Map 기본 연동 완료. S5-4: mapError 오버레이 + aside 도서관 버튼 목록이 텍스트 폴백 역할 수행. S5-5: LibrariesMap.tsx 최상단 `'use client'` 확인. aside 독립 스크롤(S5-6) 추가.
 
 **Gate 3 검증 결과**: QA 6/8 Pass, 2 Warn (2026-05-28 실행). S5-4 폴백 텍스트 목록 미구현, S5-5 일부 컴포넌트 `'use client'` 검토 필요 — Sprint 6 대응 예정.
 
@@ -145,9 +146,11 @@
 
 | 날짜 | 스프린트 | 실행 항목 | 결과 | 비고 |
 |------|---------|----------|------|------|
-| 2026-06-06 | Sprint 2 | 1차: kakao-book route + result/page 구조 검증 | 18/18 Pass | 파일 미반영 오류 발견 후 재구현 및 재검증 |
-| 2026-06-04 | Sprint 0 | 하네스 문서 검증 (CLAUDE.md, docs/, agent docs) | 구조 Pass | 에이전트 경로 불일치 docs에 기록 완료 |
-| 2026-05-28 | Sprint 5 | 도서관 지도 연동·환경변수·폴백 검증 (6개 파일) | 6/8 Pass, 2 Warn | S5-4 폴백 텍스트 미구현, S5-5 `'use client'` 검토 필요 — Sprint 6 대응 |
-| 2026-05-25 | Sprint 4 | 장르·도서 검색·리뷰 타입 정합성·라우팅 검증 | 10/11 Pass, 1 Warn | S4-7 무한 스크롤 `isEnd` 처리 불완전 — ⚠️ 부분 구현 상태 유지 |
-| 2026-05-21 | Sprint 3 | 공통 컴포넌트·레이아웃·라우팅 정합성 검증 | 11/11 Pass | Header href 5개 ↔ page 경로 일치, API 키 하드코딩 없음 확인 |
-| 2026-05-17 | Sprint 1 | 추천 폼·API 라우트·결과 페이지 흐름 E2E 검증 | 9/9 Pass | BACKEND_URL fallback(`localhost:8000`) 동작 확인, Suspense 경계 정상 |
+| 2026-06-06 | Sprint 6 | 서점 버튼 단일화·scrollbar-hide·normalizeLibrary 수정 종합 검증 | 13/13 Pass | 배포 차단 없음. 리포트: `qa-report-session-20260606.md` |
+| 2026-06-06 | Sprint 5 | libraries aside 스크롤 수정 검증 (타입·라우팅·변경 정합성) | 10/10 Pass, 1 Warn | normalizeLibrary hours/closedDays 미매핑 경고 → 동일 세션에서 수정 완료. 리포트: `qa-report.md` |
+| 2026-06-06 | Sprint 2 | 1차: kakao-book route + result/page 구조 검증 | 18/18 Pass | 파일 미반영 오류 발견 후 재구현 및 재검증. 리포트: `qa-report-sprint2-20260606.md` |
+| 2026-06-04 | Sprint 0 | 하네스 문서 검증 (CLAUDE.md, docs/, agent docs) | 구조 Pass | 에이전트 경로 불일치 docs에 기록 완료. 리포트: `qa-report-sprint0-20260604.md` |
+| 2026-05-28 | Sprint 5 | 도서관 지도 연동·환경변수·폴백 검증 (6개 파일) | 6/8 Pass, 2 Warn | S5-4·S5-5 경고 → 2026-06-06 수정 완료. 리포트: `qa-report-sprint5-20260528.md` |
+| 2026-05-25 | Sprint 4 | 장르·도서 검색·리뷰 타입 정합성·라우팅 검증 | 10/11 Pass, 1 Warn | S4-7 무한 스크롤 `isEnd` 처리 불완전 — ⚠️ 부분 구현 상태 유지. 리포트: `qa-report-sprint4-20260525.md` |
+| 2026-05-21 | Sprint 3 | 공통 컴포넌트·레이아웃·라우팅 정합성 검증 | 11/11 Pass | Header href 5개 ↔ page 경로 일치, API 키 하드코딩 없음 확인. 리포트: `qa-report-sprint3-20260521.md` |
+| 2026-05-17 | Sprint 1 | 추천 폼·API 라우트·결과 페이지 흐름 E2E 검증 | 9/9 Pass | BACKEND_URL fallback(`localhost:8000`) 동작 확인, Suspense 경계 정상. 리포트: `qa-report-sprint1-20260517.md` |

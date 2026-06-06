@@ -39,6 +39,8 @@ function normalizeLibrary(lib: Record<string, unknown>): Library {
     neighborhood: String(lib.neighborhood ?? getDistrict(address)),
     phone: lib.phone as string | undefined,
     homepage: lib.homepage as string | undefined,
+    hours: lib.hours as string | undefined,
+    closedDays: lib.closedDays as string | undefined,
     lat,
     lng,
   }

@@ -35,6 +35,16 @@ body {
   color: #1e1b16;
 }
 
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer components {
   .page-shell {
     @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
