@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(del next.config.ts)",
+      "Bash(dir \"c:\\\\reading\\\\frontend\" /s /a)"
+    ]
+  }
+}
