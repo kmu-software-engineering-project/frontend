@@ -20,10 +20,10 @@ interface KakaoBookData {
   description: string | null
 }
 
-const STORE_URLS = {
-  yes24: (title: string) => `https://www.yes24.com/Product/Search?query=${encodeURIComponent(title)}`,
-  aladin: (title: string) => `https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord=${encodeURIComponent(title)}`,
-  kyobo: (title: string) => `https://product.kyobobook.co.kr/search?query=${encodeURIComponent(title)}`,
+type StoreEntry = {
+  store_name: string
+  price: number | null
+  purchase_url: string
 }
 
 const LOADING_MESSAGES = [
@@ -87,6 +87,26 @@ function BookModal({
   onClose: () => void
 }) {
   const [bg1, bg2] = COVER_GRADIENTS[index % COVER_GRADIENTS.length]
+  const [storeStatus, setStoreStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [stores, setStores] = useState<StoreEntry[]>([])
+
+  async function loadStores() {
+    if (storeStatus !== 'idle') return
+    setStoreStatus('loading')
+    try {
+      const params = new URLSearchParams({ title: book.title })
+      if (book.author) params.set('author', book.author)
+      const isIsbn = /^\d{10,13}$/.test(book.id)
+      if (isIsbn) params.set('isbn', book.id)
+      const res = await fetch(`/api/bookstore-prices?${params.toString()}`)
+      if (!res.ok) throw new Error()
+      const data = (await res.json()) as { stores?: StoreEntry[] }
+      setStores((data.stores ?? []).filter((s) => s.store_name !== '인터파크'))
+      setStoreStatus('done')
+    } catch {
+      setStoreStatus('error')
+    }
+  }
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -153,31 +173,37 @@ function BookModal({
               </div>
             )}
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              <a
-                href={STORE_URLS.kyobo(book.title)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full bg-stone-950 px-4 py-2 text-xs font-semibold text-white hover:bg-stone-800"
-              >
-                교보문고
-              </a>
-              <a
-                href={STORE_URLS.yes24(book.title)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full border border-stone-900/20 px-4 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
-              >
-                Yes24
-              </a>
-              <a
-                href={STORE_URLS.aladin(book.title)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full border border-stone-900/20 px-4 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
-              >
-                알라딘
-              </a>
+            <div className="mt-5">
+              {storeStatus === 'idle' && (
+                <button
+                  type="button"
+                  onClick={() => void loadStores()}
+                  className="rounded-full bg-stone-950 px-4 py-2 text-xs font-semibold text-white hover:bg-stone-800"
+                >
+                  서점에서 보기
+                </button>
+              )}
+              {storeStatus === 'loading' && (
+                <span className="text-xs text-stone-500">서점 정보를 불러오는 중...</span>
+              )}
+              {storeStatus === 'error' && (
+                <span className="text-xs text-stone-500">서점 정보를 불러오지 못했습니다.</span>
+              )}
+              {storeStatus === 'done' && (
+                <div className="flex flex-wrap gap-2">
+                  {stores.map((store) => (
+                    <a
+                      key={store.store_name}
+                      href={store.purchase_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-stone-900/20 px-4 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
+                    >
+                      {store.store_name}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
